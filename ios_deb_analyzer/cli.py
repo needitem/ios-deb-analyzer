@@ -10,10 +10,16 @@ from pathlib import Path
 
 import click
 
-from .deb_parser import DebParser
-from .dylib_analyzer import DylibAnalyzer
-from .models import DebContents, DylibAnalysis, InvalidDebError, InvalidMachOError
-from .report_generator import ReportGenerator
+try:
+    from .deb_parser import DebParser
+    from .dylib_analyzer import DylibAnalyzer
+    from .models import DebContents, DylibAnalysis, InvalidDebError, InvalidMachOError
+    from .report_generator import ReportGenerator
+except ImportError:
+    from ios_deb_analyzer.deb_parser import DebParser
+    from ios_deb_analyzer.dylib_analyzer import DylibAnalyzer
+    from ios_deb_analyzer.models import DebContents, DylibAnalysis, InvalidDebError, InvalidMachOError
+    from ios_deb_analyzer.report_generator import ReportGenerator
 
 
 @click.group()

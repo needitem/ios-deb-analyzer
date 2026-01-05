@@ -18,10 +18,16 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QDragEnterEvent, QDropEvent, QSyntaxHighlighter, QTextCharFormat
 
-from .deb_parser import DebParser
-from .dylib_analyzer import DylibAnalyzer
-from .models import DebContents, DylibAnalysis, InvalidDebError, InvalidMachOError
-from .report_generator import ReportGenerator
+try:
+    from .deb_parser import DebParser
+    from .dylib_analyzer import DylibAnalyzer
+    from .models import DebContents, DylibAnalysis, InvalidDebError, InvalidMachOError
+    from .report_generator import ReportGenerator
+except ImportError:
+    from ios_deb_analyzer.deb_parser import DebParser
+    from ios_deb_analyzer.dylib_analyzer import DylibAnalyzer
+    from ios_deb_analyzer.models import DebContents, DylibAnalysis, InvalidDebError, InvalidMachOError
+    from ios_deb_analyzer.report_generator import ReportGenerator
 
 
 class AnalyzerThread(QThread):
@@ -548,7 +554,10 @@ class MainWindow(QMainWindow):
         
         try:
             import lief
-            from .disassembler import Disassembler
+            try:
+                from .disassembler import Disassembler
+            except ImportError:
+                from ios_deb_analyzer.disassembler import Disassembler
             
             # Load binary if not already loaded
             if self.lief_binary is None:
@@ -597,7 +606,10 @@ class MainWindow(QMainWindow):
         # If analyzing deb, need to extract dylib
         if self.current_file and self.deb_contents and self.deb_contents.dylib_paths:
             import tempfile
-            from .deb_parser import DebParser
+            try:
+                from .deb_parser import DebParser
+            except ImportError:
+                from ios_deb_analyzer.deb_parser import DebParser
             
             # Create persistent temp directory for this session
             if not hasattr(self, '_temp_dir') or self._temp_dir is None:
