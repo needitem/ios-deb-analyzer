@@ -306,6 +306,8 @@ class ReportGenerator:
                             "selector": m.selector,
                             "is_class_method": m.is_class_method,
                             "is_hooked": m.is_hooked,
+                            "imp_address": hex(m.imp_address) if m.imp_address else None,
+                            "imp_offset": hex(m.imp_offset) if m.imp_offset else None,
                         }
                         for m in cls.methods
                     ],

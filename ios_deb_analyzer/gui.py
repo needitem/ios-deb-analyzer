@@ -13,10 +13,10 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFileDialog, QTreeWidget, QTreeWidgetItem,
     QTabWidget, QTextEdit, QSplitter, QMessageBox, QProgressBar,
-    QGroupBox, QScrollArea, QFrame, QStatusBar
+    QGroupBox, QScrollArea, QFrame, QStatusBar, QDialog
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QFont, QColor, QDragEnterEvent, QDropEvent
+from PyQt6.QtGui import QFont, QColor, QDragEnterEvent, QDropEvent, QSyntaxHighlighter, QTextCharFormat
 
 from .deb_parser import DebParser
 from .dylib_analyzer import DylibAnalyzer
@@ -76,7 +76,9 @@ class MainWindow(QMainWindow):
         self.deb_contents: Optional[DebContents] = None
         self.dylib_analysis: Optional[DylibAnalysis] = None
         self.current_file: Optional[Path] = None
+        self.dylib_path: Optional[Path] = None  # Path to extracted dylib
         self.analyzer_thread: Optional[AnalyzerThread] = None
+        self.lief_binary = None  # LIEF binary for disassembly
         
         self.init_ui()
 
@@ -168,9 +170,19 @@ class MainWindow(QMainWindow):
 
         # Classes tab
         self.classes_tree = QTreeWidget()
-        self.classes_tree.setHeaderLabels(["Class / Method", "Type"])
-        self.classes_tree.setColumnWidth(0, 400)
+        self.classes_tree.setHeaderLabels(["Class / Method", "Type", "Offset"])
+        self.classes_tree.setColumnWidth(0, 350)
+        self.classes_tree.setColumnWidth(1, 80)
+        self.classes_tree.setColumnWidth(2, 100)
+        self.classes_tree.itemDoubleClicked.connect(self.on_method_double_clicked)
         self.tabs.addTab(self.classes_tree, "ObjC Classes")
+
+        # Disassembly tab
+        self.disasm_text = QTextEdit()
+        self.disasm_text.setReadOnly(True)
+        self.disasm_text.setFont(QFont("Consolas", 10))
+        self.disasm_text.setStyleSheet("QTextEdit { background-color: #1e1e1e; color: #d4d4d4; }")
+        self.tabs.addTab(self.disasm_text, "Disassembly")
 
         # Hooked Methods tab
         self.hooked_tree = QTreeWidget()
@@ -290,8 +302,11 @@ class MainWindow(QMainWindow):
         self.files_tree.clear()
         self.strings_text.clear()
         self.json_text.clear()
+        self.disasm_text.clear()
         self.deb_contents = None
         self.dylib_analysis = None
+        self.lief_binary = None
+        self.dylib_path = None
 
     def populate_results(self):
         """Populate all result displays."""
@@ -374,7 +389,7 @@ class MainWindow(QMainWindow):
         for cls in self.dylib_analysis.objc_classes:
             is_hooked_class = any(m.is_hooked for m in cls.methods)
             
-            class_item = QTreeWidgetItem([cls.name, "class"])
+            class_item = QTreeWidgetItem([cls.name, "class", ""])
             if is_hooked_class:
                 class_item.setForeground(0, QColor("#e74c3c"))
                 class_item.setText(1, "HOOKED")
@@ -382,7 +397,16 @@ class MainWindow(QMainWindow):
             for method in cls.methods:
                 prefix = "+" if method.is_class_method else "-"
                 method_str = f"{prefix}[{cls.name} {method.name}]"
-                method_item = QTreeWidgetItem([method_str, "instance" if not method.is_class_method else "class"])
+                
+                # Format offset
+                offset_str = ""
+                if method.imp_offset:
+                    offset_str = f"0x{method.imp_offset:X}"
+                elif method.imp_address:
+                    offset_str = f"0x{method.imp_address:X}"
+                
+                method_type = "class" if method.is_class_method else "instance"
+                method_item = QTreeWidgetItem([method_str, method_type, offset_str])
                 
                 if method.is_hooked:
                     method_item.setForeground(0, QColor("#e74c3c"))
@@ -493,6 +517,102 @@ class MainWindow(QMainWindow):
             Path(file_path).write_text(json_str, encoding="utf-8")
             self.status_bar.showMessage(f"Exported to {file_path}")
             QMessageBox.information(self, "Export Complete", f"Report saved to:\n{file_path}")
+
+    def on_method_double_clicked(self, item: QTreeWidgetItem, column: int):
+        """Handle double-click on a method to show disassembly."""
+        # Check if it's a method (has offset in column 2)
+        offset_str = item.text(2)
+        if not offset_str or not offset_str.startswith("0x"):
+            return
+        
+        try:
+            offset = int(offset_str, 16)
+        except ValueError:
+            return
+        
+        method_name = item.text(0)
+        self.disassemble_at_offset(offset, method_name)
+        
+        # Switch to disassembly tab
+        self.tabs.setCurrentWidget(self.disasm_text)
+
+    def disassemble_at_offset(self, offset: int, method_name: str = ""):
+        """Disassemble code at the given offset."""
+        self.disasm_text.clear()
+        
+        # Get the dylib path
+        dylib_path = self._get_dylib_path()
+        if not dylib_path or not dylib_path.exists():
+            self.disasm_text.setPlainText("Error: Could not find dylib file for disassembly")
+            return
+        
+        try:
+            import lief
+            from .disassembler import Disassembler
+            
+            # Load binary if not already loaded
+            if self.lief_binary is None:
+                self.lief_binary = lief.parse(str(dylib_path))
+                if isinstance(self.lief_binary, lief.MachO.FatBinary):
+                    self.lief_binary = self.lief_binary.at(0)
+            
+            disasm = Disassembler(self.lief_binary)
+            disasm.load_file(dylib_path)
+            
+            instructions = disasm.disassemble_at_offset(offset, 512)
+            
+            # Format output with syntax highlighting
+            lines = []
+            if method_name:
+                lines.append(f"; {method_name}")
+                lines.append(f"; Offset: 0x{offset:X}")
+                lines.append("")
+            
+            for insn in instructions:
+                hex_bytes = ' '.join(f'{b:02X}' for b in insn.bytes)
+                line = f"0x{insn.address:08X}:  {hex_bytes:<12}  {insn.mnemonic:<8} {insn.op_str}"
+                lines.append(line)
+                
+                # Stop at RET instruction
+                if insn.mnemonic == 'ret':
+                    lines.append("")
+                    lines.append("; --- End of function ---")
+                    break
+            
+            self.disasm_text.setPlainText('\n'.join(lines))
+            self.status_bar.showMessage(f"Disassembled {len(instructions)} instructions at 0x{offset:X}")
+            
+        except Exception as e:
+            self.disasm_text.setPlainText(f"Error during disassembly: {e}")
+
+    def _get_dylib_path(self) -> Optional[Path]:
+        """Get the path to the dylib file."""
+        if self.dylib_path and self.dylib_path.exists():
+            return self.dylib_path
+        
+        # If analyzing dylib directly
+        if self.current_file and self.current_file.suffix.lower() == '.dylib':
+            return self.current_file
+        
+        # If analyzing deb, need to extract dylib
+        if self.current_file and self.deb_contents and self.deb_contents.dylib_paths:
+            import tempfile
+            from .deb_parser import DebParser
+            
+            # Create persistent temp directory for this session
+            if not hasattr(self, '_temp_dir') or self._temp_dir is None:
+                self._temp_dir = tempfile.mkdtemp()
+            
+            parser = DebParser()
+            extract_path = parser.extract_to(self.current_file, Path(self._temp_dir))
+            
+            for dylib_rel_path in self.deb_contents.dylib_paths:
+                full_path = extract_path / dylib_rel_path
+                if full_path.exists():
+                    self.dylib_path = full_path
+                    return full_path
+        
+        return None
 
 
 def main():

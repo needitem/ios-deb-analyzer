@@ -209,38 +209,64 @@ class DylibAnalyzer:
         """
         classes = []
 
-        # Get Objective-C metadata
+        # Try LIEF Extended first (if available)
         objc_metadata = binary.objc_metadata
-        if objc_metadata is None:
-            return classes
+        if objc_metadata is not None:
+            for objc_class in objc_metadata.classes:
+                if objc_class.is_meta:
+                    continue
 
-        for objc_class in objc_metadata.classes:
-            # Skip meta classes (class methods are accessed differently)
-            if objc_class.is_meta:
-                continue
+                superclass_name = None
+                if objc_class.super_class is not None:
+                    superclass_name = objc_class.super_class.name
 
-            superclass_name = None
-            if objc_class.super_class is not None:
-                superclass_name = objc_class.super_class.name
-
-            cls = ObjCClass(
-                name=objc_class.name,
-                superclass=superclass_name,
-                methods=[],
-            )
-
-            # Extract methods
-            for method in objc_class.methods:
-                # is_instance is True for instance methods (-), False for class methods (+)
-                objc_method = ObjCMethod(
-                    name=method.name,
-                    selector=method.name,
-                    is_class_method=not method.is_instance,
-                    is_hooked=False,
+                cls = ObjCClass(
+                    name=objc_class.name,
+                    superclass=superclass_name,
+                    methods=[],
                 )
-                cls.methods.append(objc_method)
 
-            classes.append(cls)
+                for method in objc_class.methods:
+                    objc_method = ObjCMethod(
+                        name=method.name,
+                        selector=method.name,
+                        is_class_method=not method.is_instance,
+                        is_hooked=False,
+                    )
+                    cls.methods.append(objc_method)
+
+                classes.append(cls)
+            
+            if classes:
+                return classes
+
+        # Fallback to custom parser
+        try:
+            from .objc_parser import extract_objc_metadata
+            
+            parsed_classes = extract_objc_metadata(binary)
+            for parsed in parsed_classes:
+                cls = ObjCClass(
+                    name=parsed.name,
+                    superclass=parsed.superclass or None,
+                    methods=[],
+                )
+                
+                for method in parsed.methods:
+                    objc_method = ObjCMethod(
+                        name=method.name,
+                        selector=method.name,
+                        is_class_method=method.is_class_method,
+                        is_hooked=False,
+                        imp_address=method.imp,
+                        imp_offset=method.imp_offset,
+                    )
+                    cls.methods.append(objc_method)
+                
+                classes.append(cls)
+        except Exception as e:
+            # If custom parser fails, return empty list
+            pass
 
         return classes
 

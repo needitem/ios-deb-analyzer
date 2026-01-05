@@ -54,6 +54,8 @@ class ObjCMethod:
     selector: str = ""  # 셀렉터
     is_class_method: bool = False  # + or -
     is_hooked: bool = False  # 후킹 여부
+    imp_address: int = 0  # 구현 주소 (VA)
+    imp_offset: int = 0  # 파일 오프셋
 
 
 @dataclass
