@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ios-deb-analyzer"
+version = "0.1.0"
+description = "CLI tool for analyzing iOS .deb packages and dylib binaries"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Developer"}
+]
+keywords = ["ios", "deb", "dylib", "mach-o", "analysis", "security"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "lief>=0.14.0",
+    "click>=8.0.0",
+    "rich>=13.0.0",
+    "PyQt6>=6.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "hypothesis>=6.0.0",
+]
+
+[project.scripts]
+ios-deb-analyzer = "ios_deb_analyzer.cli:main"
+
+[project.gui-scripts]
+ios-deb-analyzer-gui = "ios_deb_analyzer.gui:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ios_deb_analyzer*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]

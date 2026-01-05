@@ -1,0 +1,35 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environments
+venv/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Test / Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Kiro specs
+.kiro/
+
+# Sample files
+*.deb
+*.dylib
+
+# Output files
+*.json
+!package.json
